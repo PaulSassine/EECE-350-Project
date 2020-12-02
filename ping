@@ -1,0 +1,148 @@
+import socket #to create a simple socket
+import os #to interact with the operating system
+import struct #conversion between Python values and C structs represented as Python bytes objects
+import time
+import select #direct interface to the underlying operating system implementation
+import signal #to use single handlers 
+
+TYPE_ECHO_REQUEST = 8 #ICMP type code for echo request messages
+TYPE_ECHO_REPLY=0 #ICMP type code for echo reply messages
+CODE_NETWORK_UNREACHABLE=0 #ICMP subtype code for network unreachable messages
+TYPE_DESTINATION_UNREACHABLE=3 #ICMP type code for destination unreachable messages
+CODE_HOST_UNREACHABLE=1 #ICMP subtype code for host unreachable messages
+
+
+def checksum(str):  #Generates and return checksum value for a packet
+    csum = 0     #Paul Sassine
+    countTo = (len(str) / 2) * 2 #https://github.com/JarlJackson/Network-Tools-Ping-Proxy-Traceroute-Webserver-
+    count = 0 #got inspired by the above website
+    while count < countTo:
+        thisVal = str[count + 1] * 256 + str[count]
+        csum = csum + thisVal
+        csum = csum & 0xffffffff
+        count = count + 2
+    if countTo < len(str):
+        csum = csum + str[len(str) - 1].decode()
+        csum = csum & 0xffffffff
+    csum = (csum >> 16) + (csum & 0xffff)
+    csum = csum + (csum >> 16)
+    answer = ~csum
+    answer = answer & 0xffff
+    answer = answer >> 8 | (answer << 8 & 0xff00)
+    return answer
+
+
+def receiveOnePing(mySocket, ID, sequence, destAddr, timeout): #Developped by Paul Sassine
+    timeLeft = timeout #Wait until the ping reply
+    ##https://github.com/JarlJackson/Network-Tools-Ping-Proxy-Traceroute-Webserver- got inspired by this link
+
+    while (1>0):
+        startedSelect = time.time()
+        whatReady = select.select([mySocket], [], [], timeLeft)
+        howLongInSelect = (time.time() - startedSelect)
+        if whatReady[0] == []:  # Timeout
+            return None #return none to indicate that no response was received
+
+        timeReceived = time.time()
+        recPacket, addr = mySocket.recvfrom(1024)
+
+        
+        header = recPacket[20: 28] #Slice the ICMP Header from the Ip header
+        type, code, checksum, packetID, sequence = struct.unpack("!bbHHh", header) #Get the code,ID,checksum,sequence and type
+        if (packetID==ID): #check if the ID matches with sent ICMP packet ID
+            if type==TYPE_DESTINATION_UNREACHABLE:
+                if code==CODE_NETWORK_UNREACHABLE:
+                    print("Destination Unreachable-Network Unreachable")
+                    return None
+            elif code==CODE_HOST_UNREACHABLE:
+                print("Destination Unreachable-Host Unreachable")
+                return None
+            elif type==TYPE_ECHO_REPLY: #If the echo reply was received, return the delay,TTL and bytes
+                byte = struct.calcsize("d") #find the bytes
+                timeSent = struct.unpack("!d",recPacket[28: 28 + byte])[0]
+                delay = timeReceived- timeSent #calculate the delay
+                ttl = ord(struct.unpack("!c", recPacket[8:9])[0].decode()) #find the Time To Live
+                return (delay, ttl, byte)
+            
+            timeLeft = timeLeft - howLongInSelect
+            if timeLeft<= 0:
+                return None
+                
+
+def sendOnePing(ICMP_Socket, ID, sequence, destAddr):
+    #Generate the ICMP header and send packets to the destination
+    # Header is type (8), code (8), checksum (16), id (16), sequence (16)
+    #Written by Paul Sassine and Elia Ibrahim
+
+    myChecksum = 0
+    
+    header = struct.pack("!bbHHh", TYPE_ECHO_REQUEST, 0, myChecksum, ID, sequence)
+    data = struct.pack("!d", time.time())
+    myChecksum = checksum(header + data) #calculate the checksum
+
+    header = struct.pack("!bbHHh", TYPE_ECHO_REQUEST, 0, myChecksum, ID, sequence) #repacking the header with a correct checksum value
+    packet = header + data
+
+    ICMP_Socket.sendto(packet, (destAddr, 1))   #sending ICMP packet to destination
+
+
+def doOnePing(destAddr, ID, sequence, timeout): #completes a single ping cycle and returns the delay
+    icmp = socket.getprotobyname("icmp") #Written by Elia Ibrahim
+
+    # Create a socket by specifying the address family, type, and protocol
+    mySocket = socket.socket(socket.AF_INET, socket.SOCK_RAW, icmp)
+ 
+
+    sendOnePing(mySocket, ID, sequence, destAddr) #send the packet to the destination
+    delay = receiveOnePing(mySocket, ID, sequence, destAddr, timeout) #try to receive the packet and return the time elpased
+
+    mySocket.close()
+    if (delay!=None):
+        return delay
+    else:
+        return None
+    
+
+def Results(L):  #Written by Elia Ibrahim
+    Sum=0   #This function takes as input a list and displays the average value
+    Length=len(L)
+    for i in range(Length):
+        Sum=Sum+L[i]
+        Average=Sum/Length
+    return Average
+        
+        
+
+
+def ping(host,n,timeout=1):    #Written by Elia Ibrahim
+    A=[]   #The function pings a destination and displays the reults
+    #We set timeout=1. If 1 second goes without a reply from the destination, we assume
+    #that our ping's or the destination's ping is lost
+    L=[] #create an empty list
+    dest = socket.gethostbyname(host)
+    #Send ping requests to the destination separated by 1 second
+    myID = os.getpid() & 0xFFFF 
+    loss = 0
+    for i in range(n):
+        result = doOnePing(dest, myID, i, timeout)
+        if not result:
+            A.append("Request timed out.")
+            loss += 1 #If we don't get a reply, icrement the packet loss by 1
+        else: #if we get a reply, find the delay, the TTL and the bytes
+            delay = int(result[0]*1000)
+            L.append(delay)
+            ttl = result[1]
+            bytes = result[2]
+            A.append("Received from " + dest + ": byte(s)=" + str(bytes) + " delay=" + str(delay) + "ms TTL=" + str(ttl))
+        time.sleep(1)  # one second
+    A.append("Ping statistics for " + dest )
+    A.append("Packets:"+ "  sent = " + str(n) + "  received = " + str(n-loss) + "  lost = " + str(loss) +"  " + str(((loss)/n)*100)+" % loss ")
+    a=min(L)
+    b=max(L)
+    c=Results(L) #call the function Results to display the minimum,maximum,average of the RTT
+    A.append("Approximate round trip times in milli-seconds : ")
+    A.append("    Minimum = "+ str(a)+ " ms,"+" Maximum ="+ str(b)+ "ms," + " Average = "+ str(c)+" ms")
+    
+
+    return A
+
