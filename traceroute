@@ -1,0 +1,59 @@
+from time import sleep #Traceroute code developped by Chloe Zeinoun and Rewa Abou Karroum
+from sockets import ICMPv4Socket
+from models import ICMPRequest, Hop
+from exceptions import *
+from utils import PID, resolve
+
+#https://github.com/JarlJackson/Network-Tools-Ping-Proxy-Traceroute-Webserver- inspired by this link
+#Rewa and Chloe
+def traceroute(address, count=2, interval=0.05, timeout=4, id=PID,
+        first_hop=1, max_hops=30, source=None, fast=False):
+    L=[];
+    socket_ICMP = ICMPv4Socket(source) #open an ICMP socket for listening and sending
+    address = resolve(address) #get the IP address of the name address
+    is_host_reached = False #set to True if the host is unreachable
+    many_hops = [] #record the multiple hops to arrive at the destination
+    TTL = 1 #set TTL to 1 (stop at first hop)
+    while not is_host_reached and TTL <= max_hops:
+        hop_address = None
+        packets_sent = 0 #record the number of packet sent
+        packets_received = 0 #and received
+        for sequence in range(count):
+            request = ICMPRequest(
+                destination=address,
+                id=id,
+                sequence=sequence,
+                ttl=TTL) #forge an ICMP packet with the following requirements
+
+            try:
+                socket_ICMP.send(request) #send the forged packet
+                packets_sent += 1 #record an additional packet sent
+
+                reply = socket_ICMP.receive(request, timeout) #opening the port to listen to the incoming message
+                reply.raise_for_status()
+                is_host_reached = True  # the host was reached
+
+            except TimeExceeded:
+                sleep(interval) #in case the time of waiting was exceeded
+            except TimeoutExceeded:
+                L.append("Request timed out.")
+
+
+            hop_address = reply.source
+            packets_received += 1
+
+        if packets_received: #Written by Elia Ibrahim
+            hop = Hop(
+                address=hop_address,min_rtt=0,avg_rtt=0,max_rtt=0,
+                packets_sent=packets_sent,
+                packets_received=packets_received,
+                distance=TTL) #record the hop characteristics
+            many_hops.append(hop) #append the hop to the list of reached hops
+            L.append(hop)
+
+        TTL += 1 # increase the TTL by one to reach the next hop
+    return(L)
+    socket_ICMP.close()
+
+    
+
