@@ -1,0 +1,84 @@
+
+from tkinter import * #Interface developped and designed by Elia Ibrahim, Paul Sassine and Chloe Zeinoun
+import tkinter.messagebox
+from traceroute import traceroute
+from ping import *
+from time import sleep
+from sockets import ICMPv4Socket
+from models import ICMPRequest, Hop
+from exceptions import *
+from utils import PID, resolve
+
+
+class GUI_Beginers: #creating a class to design the interface and its functions
+    
+    def __init__(self,root): #Paul Sassine & Elia Ibrahim 
+        self.root=root
+        self.root.title("Addition")
+        self.root.geometry("900x700")
+        
+        frame1=Frame(self.root,padx=20,bd=16) #designing the interface and its geometry
+        frame1.grid()
+        
+        frame2=Frame(frame1,width=600,height=150,padx=20,bd=16,relief=RIDGE) 
+        frame2.grid(row=0 ,column=0)
+        
+        frame3=Frame(frame1,width=600,height=150,padx=36,bd=16,relief=RIDGE)
+        frame3.grid(row=1, column=0)
+        
+        frame4=Frame(frame1)
+        frame4.grid(row=2, column=0)
+        
+        WebsiteName=StringVar()
+        PingNum=StringVar()
+        
+        #Written by Elia Ibrahim & Chloe Zeinoun
+        #Font and text specifications
+        self.lblwebsite=Label(frame2,text="Enter the website name:",font=('arial',14,'bold'),bd=12)
+        self.lblwebsite.grid(row=0,column=0)
+        self.txtwebsite=Entry(frame2, textvariable=WebsiteName,font=('arial',14,'bold'),bd=12)
+        self.txtwebsite.grid(row=0, column=1)
+        self.lblwebsite=Label(frame2,text="Number of pings(only for ping):",font=('arial',14,'bold'),bd=12)
+        self.lblwebsite.grid(row=1,column=0)
+        self.txtwebsite=Entry(frame2, textvariable=PingNum,font=('arial',14,'bold'),bd=12)
+        self.txtwebsite.grid(row=1, column=1)
+        
+        
+        def tracert(): #Chloe Zeinoun
+            string=str(WebsiteName.get())
+            L=traceroute(string, count=2, interval=0.05, timeout=5, id=PID,first_hop=1, max_hops=30, source=None)
+            for i in range(0,len(L)):
+                self.mytext.insert(END,(L[i],'\n'))
+        
+        def ping1(): #Paul Sassine
+            string=str(WebsiteName.get())
+            string1=str(PingNum.get())
+            num=int(string1)
+            L=ping(string,num)
+            for i in range(0,len(L)):
+                self.mytext.insert(END,(L[i],'\n'))
+        
+        def Reset(): #Developped by Elia Ibrahim
+            WebsiteName.set("")
+            PingNum.set("")
+            self.mytext.delete('1.0', END)
+            
+
+        def Exit(): #Paul Sassine
+            root.destroy()
+        
+        #Written by Chloe Zeinoun 
+        self.btnTraceroute=Button(frame3, text="Traceroute",font=('arial',14,'bold'),bd=12,pady=14,padx=14,width=8,command=tracert).grid(row=0,column=1)
+        self.btnTraceroute=Button(frame3, text="Ping",font=('arial',14,'bold'),bd=12,pady=14,padx=14,width=8,command=ping1).grid(row=0,column=2)
+        self.btnRset=Button(frame3, text="Reset",font=('arial',14,'bold'),bd=12,pady=14,padx=14,width=8,command=Reset).grid(row=0,column=3)
+        self.btnExit=Button(frame3, text="Exit",font=('arial',14,'bold'),bd=12,pady=14,padx=14,width=8,command=Exit).grid(row=0,column=4)
+        
+        self.mytext=Text(frame4,width=70,height=25)
+        self.mytext.pack(pady=20)
+        
+            
+        
+if __name__=='__main__':
+    root=Tk()
+    application=GUI_Beginers(root)
+    root.mainloop()
